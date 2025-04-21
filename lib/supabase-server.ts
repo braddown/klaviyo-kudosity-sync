@@ -19,21 +19,21 @@ export async function createServerSupabaseClient() {
         get(name: string) {
           try {
             return cookieStore.get(name)?.value;
-          } catch (error) {
+          } catch {
             return undefined;
           }
         },
         set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set(name, value, options);
-          } catch (error) {
+          } catch {
             // Silently fail if not in a Server Action or Route Handler
           }
         },
         remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set(name, '', { ...options, maxAge: 0 });
-          } catch (error) {
+          } catch {
             // Silently fail if not in a Server Action or Route Handler
           }
         },
