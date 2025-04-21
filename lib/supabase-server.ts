@@ -11,7 +11,7 @@ export async function createServerSupabaseClient() {
     console.error("Supabase environment variables are not properly set");
   }
 
-  return createServerClient(
+  const client = createServerClient(
     supabaseUrl || "",
     supabaseAnonKey || "",
     {
@@ -40,4 +40,6 @@ export async function createServerSupabaseClient() {
       },
     }
   );
+  
+  return client;
 }
