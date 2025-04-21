@@ -6,7 +6,7 @@ export default async function Home() {
   const supabase = await createServerSupabaseClient();
   
   // Get session data with proper error handling
-  const { data, error } = await supabase.auth.getSession();
+  const { data } = await supabase.auth.getSession();
   const session = data?.session;
   
   return (

@@ -14,7 +14,7 @@ export default function VerificationPage() {
         
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-left">
           <p className="text-blue-700">
-            We've sent you an email with a confirmation link. Please check your inbox and click the link to verify your account.
+            We&apos;ve sent you an email with a confirmation link. Please check your inbox and click the link to verify your account.
           </p>
         </div>
         

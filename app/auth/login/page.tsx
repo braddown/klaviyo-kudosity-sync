@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClientSupabaseClient } from "@/lib/supabase-client";
+import { AuthError } from "@supabase/supabase-js";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -30,8 +31,12 @@ export default function LoginPage() {
 
       router.refresh();
       router.push("/");
-    } catch (error: any) {
-      setError(error.message || "An error occurred during login");
+    } catch (error: unknown) {
+      if (error instanceof AuthError) {
+        setError(error.message);
+      } else {
+        setError("An error occurred during login");
+      }
     } finally {
       setLoading(false);
     }
@@ -100,7 +105,7 @@ export default function LoginPage() {
           
           <div className="text-center">
             <p className="text-sm">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link 
                 href="/auth/signup" 
                 className="font-medium text-indigo-600 hover:text-indigo-500"

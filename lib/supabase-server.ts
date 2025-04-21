@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { CookieOptions } from "@supabase/ssr";
 
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies();
@@ -22,14 +23,14 @@ export async function createServerSupabaseClient() {
             return undefined;
           }
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set(name, value, options);
           } catch (error) {
             // Silently fail if not in a Server Action or Route Handler
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set(name, '', { ...options, maxAge: 0 });
           } catch (error) {

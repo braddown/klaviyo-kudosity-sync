@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClientSupabaseClient } from "@/lib/supabase-client";
+import { AuthError } from "@supabase/supabase-js";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -40,8 +41,12 @@ export default function SignupPage() {
 
       // Redirect to verification page
       router.push("/auth/verification");
-    } catch (error: any) {
-      setError(error.message || "An error occurred during signup");
+    } catch (error: unknown) {
+      if (error instanceof AuthError) {
+        setError(error.message);
+      } else {
+        setError("An error occurred during signup");
+      }
     } finally {
       setLoading(false);
     }
