@@ -6,10 +6,11 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code");
   
   if (code) {
-    const supabase = createServerSupabaseClient();
+    // Await the Promise to get the actual SupabaseClient
+    const supabase = await createServerSupabaseClient();
     
     // Exchange the code for a session
-    await (await supabase).auth.exchangeCodeForSession(code);
+    await supabase.auth.exchangeCodeForSession(code);
   }
 
   // URL to redirect to after sign in process completes
