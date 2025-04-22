@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
 export default async function Home() {
   const supabase = await createServerSupabaseClient();
@@ -9,43 +10,28 @@ export default async function Home() {
   const { data } = await supabase.auth.getSession();
   const session = data?.session;
   
+  // If user is authenticated, redirect to dashboard
+  if (session) {
+    redirect("/dashboard");
+  }
+  
   return (
     <div className="grid grid-rows-[auto_1fr_auto] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
       <header className="w-full flex justify-end items-center p-4">
-        {session ? (
-          <div className="flex items-center gap-4">
-            <span>Hello, {session.user.email}</span>
-            <Link 
-              href="/dashboard" 
-              className="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500"
-            >
-              Dashboard
-            </Link>
-            <form action="/api/auth/signout" method="post">
-              <button 
-                type="submit"
-                className="rounded bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        ) : (
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/auth/login" 
-              className="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500"
-            >
-              Sign in
-            </Link>
-            <Link 
-              href="/auth/signup" 
-              className="rounded bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
-            >
-              Sign up
-            </Link>
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          <Link 
+            href="/auth/login" 
+            className="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500"
+          >
+            Sign in
+          </Link>
+          <Link 
+            href="/auth/signup" 
+            className="rounded bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
+          >
+            Sign up
+          </Link>
+        </div>
       </header>
       
       <main className="flex flex-col gap-[32px] items-center sm:items-start">
