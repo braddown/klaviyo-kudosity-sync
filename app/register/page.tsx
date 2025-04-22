@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { signUp } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
 
-export default function RegisterPage() {
+export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [registered, setRegistered] = useState(false);

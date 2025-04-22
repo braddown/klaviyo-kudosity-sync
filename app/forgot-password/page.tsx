@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { resetPassword } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
 
-export default function ForgotPasswordPage() {
+export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);

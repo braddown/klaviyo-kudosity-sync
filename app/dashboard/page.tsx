@@ -14,7 +14,7 @@ interface UserSessionInfo {
   provider?: string;
 }
 
-export default function DashboardPage() {
+export default function Page() {
   const [user, setUser] = useState<UserSessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   

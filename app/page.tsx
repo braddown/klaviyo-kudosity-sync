@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 // This is a Server Component
-export default function Home() {
+export default function Page() {
   // This is a server-side redirect in Next.js App Router
   redirect('/login');
   
