@@ -1,3 +1,3 @@
-# Klaviyo Kudosity Sync
+# Klaviyo-Kudosity Sync
 
-A fresh project integrated with Supabase, GitHub, and Vercel. 
+A Next.js application for syncing data between Klaviyo and Kudosity platforms.
