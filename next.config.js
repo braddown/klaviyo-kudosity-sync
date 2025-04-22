@@ -7,7 +7,14 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
     // Add Supabase storage domain if you're using it for images
-    // domains: ['localhost', '<your-project>.supabase.co'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'qsuqkrovwperocnbxeni.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
   },
   // Add any additional headers for security
   async headers() {
@@ -31,6 +38,9 @@ const nextConfig = {
         ],
       },
     ];
+  },
+  experimental: {
+    serverComponentsExternalPackages: ['@supabase/ssr'],
   },
 };
 

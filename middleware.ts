@@ -8,42 +8,26 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const cookieStore = await request.cookies;
-
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         get(name) {
-          return cookieStore.get(name)?.value;
+          return request.cookies.get(name)?.value;
         },
         set(name, value, options) {
-          // Set cookie for the browser
           response.cookies.set({ name, value, ...options });
-          // Update response
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
         },
         remove(name, options) {
-          // Set cookie for the browser with empty value and max-age=0
           response.cookies.set({ name, value: '', ...options, maxAge: 0 });
-          // Update response
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
         },
       },
     }
   );
 
-  // Refresh the auth token
-  await supabase.auth.getUser();
+  // Refresh the session
+  await supabase.auth.getSession();
 
   const { data } = await supabase.auth.getSession();
 
