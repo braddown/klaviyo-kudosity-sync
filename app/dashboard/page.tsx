@@ -1,59 +1,94 @@
-import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { redirect } from "next/navigation";
-import Link from "next/link";
+"use client";
 
-export default async function DashboardPage() {
-  const supabase = await createServerSupabaseClient();
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCurrentSession, signOut } from "@/lib/supabase";
+import { formatErrorMessage } from "@/lib/utils";
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  // Get authenticated user
-  const { data: { user }, error } = await supabase.auth.getUser();
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const { user, error } = await getCurrentSession();
+        
+        if (error || !user) {
+          // Redirect to login if no session
+          window.location.href = "/login";
+          return;
+        }
+        
+        setUser({ email: user.email || "User" });
+      } catch (err) {
+        setError(formatErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    checkAuth();
+  }, []);
   
-  // If there's an error or no user, redirect to login page
-  if (error || !user) {
-    console.error("Authentication error:", error?.message);
-    redirect("/auth/login");
+  const handleSignOut = async () => {
+    try {
+      const { error } = await signOut();
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Redirect to login
+      window.location.href = "/login";
+    } catch (err) {
+      setError(formatErrorMessage(err));
+    }
+  };
+  
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <p>Loading...</p>
+      </div>
+    );
   }
   
-  // Fetch user profile data (if you have a profiles table)
-  // This is an example of how you'd fetch user-specific data
-  // const { data: profile, error: profileError } = await supabase
-  //   .from('profiles')
-  //   .select('*')
-  //   .eq('id', user.id)
-  //   .single();
-  
   return (
-    <div className="container mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Welcome, {user.email}!</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">
-          This is a protected page that only authenticated users can see.
-        </p>
-        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-          <p>User ID: {user.id}</p>
-          <p>Email: {user.email}</p>
-          <p>Last Sign In: {new Date(user.last_sign_in_at || '').toLocaleString()}</p>
-        </div>
-      </div>
+    <div className="flex min-h-screen flex-col p-4">
+      <header className="container mx-auto mb-8 flex items-center justify-between py-4">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        {user && (
+          <Button variant="outline" onClick={handleSignOut}>
+            Sign Out
+          </Button>
+        )}
+      </header>
       
-      <div className="flex gap-4">
-        <Link 
-          href="/"
-          className="rounded bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
-        >
-          Back to Home
-        </Link>
-        
-        <form action="/api/auth/signout" method="post">
-          <button 
-            type="submit"
-            className="rounded bg-red-600 px-4 py-2 text-white hover:bg-red-500"
-          >
-            Sign out
-          </button>
-        </form>
-      </div>
+      <main className="container mx-auto flex-1">
+        <Card>
+          <CardHeader>
+            <CardTitle>Welcome, {user?.email}!</CardTitle>
+            <CardDescription>
+              You have successfully logged in to your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p>
+              This is a protected dashboard page. Only authenticated users can see this content.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <p className="text-sm text-muted-foreground">
+              This page will be used to display your synchronized Klaviyo and Kudosity data.
+            </p>
+          </CardFooter>
+        </Card>
+      </main>
     </div>
   );
 } 

@@ -1,8 +1,0 @@
-{
-  "framework": "nextjs",
-  "buildCommand": "npm run vercel-build",
-  "installCommand": "npm install",
-  "devCommand": "next dev",
-  "outputDirectory": ".next",
-  "regions": ["syd1"]
-} 
