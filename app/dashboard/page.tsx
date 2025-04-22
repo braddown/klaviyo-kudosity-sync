@@ -1,17 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentSession, signOut } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
 
 export default function DashboardPage() {
-  const router = useRouter();
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
     async function checkAuth() {
@@ -26,7 +23,9 @@ export default function DashboardPage() {
         
         setUser({ email: user.email || "User" });
       } catch (err) {
-        setError(formatErrorMessage(err));
+        console.error('Authentication error:', formatErrorMessage(err));
+        // Redirect to login on error
+        window.location.href = "/login";
       } finally {
         setLoading(false);
       }
@@ -46,7 +45,9 @@ export default function DashboardPage() {
       // Redirect to login
       window.location.href = "/login";
     } catch (err) {
-      setError(formatErrorMessage(err));
+      console.error('Sign out error:', formatErrorMessage(err));
+      // Still try to redirect to login page even if there's an error
+      window.location.href = "/login";
     }
   };
   

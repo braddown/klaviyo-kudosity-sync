@@ -84,7 +84,7 @@ export async function signIn(email: string, password: string): Promise<AuthRespo
 export async function resetPassword(email: string): Promise<AuthResponse> {
   try {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
 
