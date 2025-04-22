@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 export default async function Home() {
   const supabase = await createServerSupabaseClient();
   
-  // Get session data with proper error handling
+  // Get session data
   const { data } = await supabase.auth.getSession();
   const session = data?.session;
   
