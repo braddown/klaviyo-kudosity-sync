@@ -6,14 +6,22 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { getCurrentSession, signOut } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
 
+interface UserSessionInfo {
+  email: string;
+  id: string;
+  lastSignIn?: string;
+  createdAt?: string;
+  provider?: string;
+}
+
 export default function DashboardPage() {
-  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [user, setUser] = useState<UserSessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
     async function checkAuth() {
       try {
-        const { user, error } = await getCurrentSession();
+        const { user, session, error } = await getCurrentSession();
         
         if (error || !user) {
           // Redirect to login if no session
@@ -21,7 +29,14 @@ export default function DashboardPage() {
           return;
         }
         
-        setUser({ email: user.email || "User" });
+        // Extract useful session information
+        setUser({
+          email: user.email || "No email provided",
+          id: user.id,
+          lastSignIn: user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : undefined,
+          createdAt: user.created_at ? new Date(user.created_at).toLocaleString() : undefined,
+          provider: user.app_metadata?.provider || "email",
+        });
       } catch (err) {
         console.error('Authentication error:', formatErrorMessage(err));
         // Redirect to login on error
@@ -71,21 +86,67 @@ export default function DashboardPage() {
       </header>
       
       <main className="container mx-auto flex-1">
-        <Card>
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Welcome, {user?.email}!</CardTitle>
             <CardDescription>
-              You have successfully logged in to your account.
+              Your session information
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-secondary/50 p-3 rounded">
+                  <p className="text-sm font-medium text-muted-foreground">User ID</p>
+                  <p className="mt-1 font-mono text-sm break-all">{user?.id}</p>
+                </div>
+                
+                <div className="bg-secondary/50 p-3 rounded">
+                  <p className="text-sm font-medium text-muted-foreground">Email</p>
+                  <p className="mt-1 font-mono text-sm break-all">{user?.email}</p>
+                </div>
+                
+                {user?.createdAt && (
+                  <div className="bg-secondary/50 p-3 rounded">
+                    <p className="text-sm font-medium text-muted-foreground">Account Created</p>
+                    <p className="mt-1 font-mono text-sm">{user?.createdAt}</p>
+                  </div>
+                )}
+                
+                {user?.lastSignIn && (
+                  <div className="bg-secondary/50 p-3 rounded">
+                    <p className="text-sm font-medium text-muted-foreground">Last Sign In</p>
+                    <p className="mt-1 font-mono text-sm">{user?.lastSignIn}</p>
+                  </div>
+                )}
+                
+                {user?.provider && (
+                  <div className="bg-secondary/50 p-3 rounded">
+                    <p className="text-sm font-medium text-muted-foreground">Authentication Provider</p>
+                    <p className="mt-1 font-mono text-sm">{user?.provider}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Getting Started</CardTitle>
+            <CardDescription>
+              This dashboard will be used to manage integrations between Klaviyo and Kudosity.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p>
-              This is a protected dashboard page. Only authenticated users can see this content.
+              This protected dashboard shows your authentication status and session information.
+              In the future, it will include functionality to synchronize data between Klaviyo and Kudosity platforms.
             </p>
           </CardContent>
           <CardFooter>
             <p className="text-sm text-muted-foreground">
-              This page will be used to display your synchronized Klaviyo and Kudosity data.
+              API integrations with n8n, Klaviyo, and Kudosity will be coming soon.
             </p>
           </CardFooter>
         </Card>
