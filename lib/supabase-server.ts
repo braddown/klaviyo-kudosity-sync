@@ -1,34 +1,18 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { type CookieOptions } from "@supabase/ssr";
-import { cache } from "react";
+'use server';
 
-// Create a cached Supabase client to avoid creating a new client on every server request
-export const createServerSupabaseClient = cache(async () => {
-  const cookieStore = cookies();
+import { createClient } from '@supabase/supabase-js';
+import { cache } from 'react';
+
+const createServerSupabaseClient = cache(() => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new Error("Supabase environment variables are not properly set");
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase environment variables');
   }
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          cookieStore.set(name, value, options);
-        },
-        remove(name: string, options: CookieOptions) {
-          cookieStore.set(name, '', { ...options, maxAge: 0 });
-        },
-      },
-    }
-  );
+  
+  return createClient(supabaseUrl, supabaseKey);
 });
 
-// Export for convenience
+export { createServerSupabaseClient };
 export default createServerSupabaseClient;
