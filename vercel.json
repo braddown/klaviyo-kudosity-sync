@@ -6,7 +6,7 @@
   "outputDirectory": ".next",
   "version": 2,
   "env": {
-    "NEXT_PUBLIC_SUPABASE_URL": "@next_public_supabase_url",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@next_public_supabase_anon_key"
+    "NEXT_PUBLIC_SUPABASE_URL": "https://qsuqkrovwperocnbxeni.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzdXFrcm92d3Blcm9jbmJ4ZW5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUyODY0NjMsImV4cCI6MjA2MDg2MjQ2M30.XXbIuTfxjj_Po3DvB-dKV4dHTA3vKzs3hLgz3ZwskBo"
   }
 } 
