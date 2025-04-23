@@ -1,30 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth/auth-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { signIn } from "@/lib/supabase";
+import { signIn, getCurrentSession } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
 
 export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  
+  // Check if already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { session, error: sessionError } = await getCurrentSession();
+        if (sessionError) {
+          console.error("Session check error:", sessionError);
+          return;
+        }
+        
+        if (session) {
+          // Already logged in, redirect to dashboard
+          console.log("Already logged in, redirecting to dashboard");
+          router.push("/dashboard");
+        }
+      } catch (err) {
+        console.error("Session check exception:", err);
+      }
+    };
+    
+    checkSession();
+  }, [router]);
   
   const handleLogin = async (email: string, password: string) => {
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     
     try {
-      const { error: authError } = await signIn(email, password);
+      const { session, error: authError } = await signIn(email, password);
       
       if (authError) {
         throw authError;
       }
       
-      // Direct redirect after successful login
-      window.location.href = "/dashboard";
+      if (!session) {
+        throw new Error("Login successful but no session returned");
+      }
+      
+      // Use the router for client-side navigation
+      router.push("/dashboard");
     } catch (err) {
+      console.error("Login error:", err);
       setError(formatErrorMessage(err));
     } finally {
       setLoading(false);

@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCurrentSession, signOut } from "@/lib/supabase";
+import { getCurrentSession, signOut, getSupabaseClient } from "@/lib/supabase";
 import { formatErrorMessage } from "@/lib/utils";
+import Link from 'next/link';
 
 interface UserSessionInfo {
   email: string;
@@ -16,6 +17,7 @@ interface UserSessionInfo {
 
 export default function Page() {
   const [user, setUser] = useState<UserSessionInfo | null>(null);
+  const [apiSettings, setApiSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
@@ -37,6 +39,16 @@ export default function Page() {
           createdAt: user.created_at ? new Date(user.created_at).toLocaleString() : undefined,
           provider: user.app_metadata?.provider || "email",
         });
+        
+        // Check if user has API settings
+        const supabase = getSupabaseClient();
+        const { data: settings } = await supabase
+          .from('api_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        
+        setApiSettings(settings || null);
       } catch (err) {
         console.error('Authentication error:', formatErrorMessage(err));
         // Redirect to login on error
@@ -149,6 +161,76 @@ export default function Page() {
               API integrations with n8n, Klaviyo, and Kudosity will be coming soon.
             </p>
           </CardFooter>
+        </Card>
+        
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>API Integration Status</CardTitle>
+            <CardDescription>
+              Manage your API settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {apiSettings ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white shadow-sm rounded-md p-4 border border-gray-100">
+                    <h3 className="font-medium">Kudosity SMS</h3>
+                    <div className="flex items-center mt-2">
+                      <div className={`w-3 h-3 rounded-full mr-2 ${
+                        apiSettings.kudosity_username && apiSettings.kudosity_password 
+                          ? 'bg-green-500' 
+                          : 'bg-red-500'
+                      }`}></div>
+                      <span>{
+                        apiSettings.kudosity_username && apiSettings.kudosity_password 
+                          ? 'Configured' 
+                          : 'Not configured'
+                      }</span>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white shadow-sm rounded-md p-4 border border-gray-100">
+                    <h3 className="font-medium">Klaviyo Email</h3>
+                    <div className="flex items-center mt-2">
+                      <div className={`w-3 h-3 rounded-full mr-2 ${
+                        apiSettings.klaviyo_api_key 
+                          ? 'bg-green-500' 
+                          : 'bg-red-500'
+                      }`}></div>
+                      <span>{
+                        apiSettings.klaviyo_api_key
+                          ? 'Configured' 
+                          : 'Not configured'
+                      }</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-4">
+                  <Link 
+                    href="/dashboard/settings" 
+                    className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Manage API Settings
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-gray-600">
+                  You haven't configured any API settings yet. Configure your integration settings to start syncing data.
+                </p>
+                
+                <Link 
+                  href="/dashboard/settings" 
+                  className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Configure API Settings
+                </Link>
+              </div>
+            )}
+          </CardContent>
         </Card>
       </main>
     </div>
