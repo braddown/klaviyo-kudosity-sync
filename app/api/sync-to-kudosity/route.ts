@@ -9,6 +9,7 @@ import {
   uploadContactsToKudosity, 
   checkBulkImportProgress 
 } from '@/lib/api/kudosity';
+import { getSupabaseAdminClient } from '@/lib/supabase';
 
 // In-memory storage for job progress (would be replaced with a proper DB solution in production)
 const jobProgress: Record<string, any> = {};
@@ -371,19 +372,29 @@ async function startSyncProcess(
       
       // Save sync history to database if we have a real user ID
       if (userId !== 'direct_api') {
-        const supabase = createRouteHandlerClient({ cookies });
-        await supabase.from('sync_history').insert({
-          user_id: userId,
-          source_type: sourceType,
-          source_id: sourceId,
-          destination_id: kudosityListId || 'new_list',
-          profiles_count: profiles.length,
-          imported_count: validContacts.length,
-          skipped_count: invalidCount,
-          completed_at: new Date().toISOString(),
-          import_id: importId,
-          csv_url: csvUrl
-        });
+        try {
+          // Use the admin client with service role for database operations
+          const supabase = getSupabaseAdminClient();
+          const { error } = await supabase.from('sync_history').insert({
+            user_id: userId,
+            source_type: sourceType,
+            source_id: sourceId,
+            destination_id: kudosityListId || 'new_list',
+            profiles_count: profiles.length,
+            imported_count: validContacts.length,
+            skipped_count: invalidCount,
+            completed_at: new Date().toISOString(),
+            import_id: importId,
+            csv_url: csvUrl
+          });
+          
+          if (error) {
+            console.error('Failed to save sync history:', error);
+          }
+        } catch (historyError) {
+          console.error('Error saving sync history:', historyError);
+          // Continue execution even if history saving fails
+        }
       }
       
     } catch (error: any) {

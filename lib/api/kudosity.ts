@@ -6,19 +6,27 @@
 // Add these imports at the top
 import { createClient } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseAdminClient } from '@/lib/supabase';
 
 // Get Supabase client for storage operations
 function getSupabaseStorageClient() {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error("Missing Supabase environment variables");
-      throw new Error("Missing required Supabase configuration");
+    // Use the admin client which has the service role key for storage operations
+    if (typeof window === 'undefined') {
+      // Server-side context - use admin client with service role
+      return getSupabaseAdminClient();
+    } else {
+      // Client-side fallback (though storage operations should generally be server-side)
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.error("Missing Supabase environment variables");
+        throw new Error("Missing required Supabase configuration");
+      }
+      
+      return createClient(supabaseUrl, supabaseKey);
     }
-    
-    return createClient(supabaseUrl, supabaseKey);
   } catch (error) {
     console.error("Error creating Supabase client:", error);
     throw error;

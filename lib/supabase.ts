@@ -13,6 +13,7 @@ export interface AuthResponse {
 
 // Singleton pattern to reuse the Supabase client
 let supabaseInstance: SupabaseClient | null = null;
+let supabaseAdminInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (supabaseInstance) {
@@ -28,6 +29,29 @@ export function getSupabaseClient(): SupabaseClient {
 
   supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
   return supabaseInstance;
+}
+
+// Server-side admin client with service role (only use server-side)
+export function getSupabaseAdminClient(): SupabaseClient {
+  if (typeof window !== 'undefined') {
+    console.warn('Warning: Attempted to use admin client in browser context');
+    return getSupabaseClient(); // Fall back to regular client in browser
+  }
+
+  if (supabaseAdminInstance) {
+    return supabaseAdminInstance;
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.warn('Missing Supabase service role key, falling back to anon key');
+    return getSupabaseClient();
+  }
+
+  supabaseAdminInstance = createClient(supabaseUrl, serviceRoleKey);
+  return supabaseAdminInstance;
 }
 
 // Authentication helpers
