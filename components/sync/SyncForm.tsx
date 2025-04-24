@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import LargeListSync from './LargeListSync';
 
 interface SyncFormProps {
   initialError?: string;
@@ -68,7 +69,7 @@ export default function SyncForm({ initialError }: SyncFormProps) {
   const addFieldDropdownRef = useRef<HTMLDivElement>(null);
   
   // Progress state
-  const [syncState, setSyncState] = useState<'idle' | 'retrieving' | 'processing' | 'uploading' | 'importing' | 'complete' | 'error'>('idle');
+  const [syncState, setSyncState] = useState<'idle' | 'retrieving' | 'processing' | 'uploading' | 'importing' | 'complete' | 'error' | 'monitoring'>('idle');
   const [progress, setProgress] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
@@ -87,6 +88,9 @@ export default function SyncForm({ initialError }: SyncFormProps) {
   
   // Add this state for chunking option
   const [enableChunking, setEnableChunking] = useState<boolean>(true);
+  
+  // Add state for large list sync
+  const [showLargeListSync, setShowLargeListSync] = useState<boolean>(false);
   
   const { toast } = useToast();
   
@@ -606,8 +610,13 @@ export default function SyncForm({ initialError }: SyncFormProps) {
     }
   }, [selectedKlaviyoId, selectedType, klaviyoSegments, klaviyoLists]);
   
-  // Handle sync initiation
+  // Update handleSync function to use the queueing system for large lists
   const handleSync = async () => {
+    // Reset error state
+    setError(null);
+    setErrorDetails(null);
+    
+    // Validation checks
     if (!selectedKlaviyoId) {
       toast({
         title: 'Selection required',
@@ -617,11 +626,16 @@ export default function SyncForm({ initialError }: SyncFormProps) {
       return;
     }
     
+    // Check if we should use the large list sync for this import
+    if (enableChunking) {
+      setShowLargeListSync(true);
+      return;
+    }
+    
     try {
+      // If not using chunking, continue with the original sync process
       setSyncState('retrieving');
       setProgress(0);
-      setError(null);
-      setErrorDetails(null);
       
       // Get source name for automatic list creation
       const sourceName = getSelectedKlaviyoName();
@@ -785,16 +799,70 @@ export default function SyncForm({ initialError }: SyncFormProps) {
           setProfilesRetrieved(profilesRetrieved || 0);
           setTotalProfiles(totalProfiles || 0);
           
+          // Check if sync is complete
           if (state === 'complete') {
             setSyncStats(stats);
             clearInterval(pollInterval);
             
             toast({
               title: 'Sync Complete',
-              description: `Successfully synced ${stats?.imported || 0} contacts to Kudosity list "${listName}"`,
+              description: `Successfully synced ${stats?.imported || 0} contacts to Kudosity`,
               variant: 'default',
             });
-          } else if (state === 'error') {
+          } 
+          // Handle the "monitoring" state - continue polling but at a slower rate
+          else if (state === 'monitoring') {
+            // Update stats but keep polling
+            setSyncStats(stats);
+            
+            // Show a toast notification but only once
+            if (syncState !== 'monitoring') {
+              toast({
+                title: 'Sync In Progress',
+                description: 'Import is still processing. This may take several minutes for large imports.',
+                variant: 'default',
+              });
+            }
+            
+            // If we've been in monitoring state for more than 10 minutes, slow down polling to every 10 seconds
+            // This helps reduce API load for very long-running imports
+            if (syncState === 'monitoring') {
+              clearInterval(pollInterval);
+              setInterval(async () => {
+                // Continue checking progress at a slower rate
+                try {
+                  const slowPollResponse = await fetch(`/api/import-progress?jobId=${jobId}`, {
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+                  
+                  if (slowPollResponse.ok) {
+                    const slowPollData = await slowPollResponse.json();
+                    
+                    // Update state if it changes
+                    if (slowPollData.state !== syncState) {
+                      setSyncState(slowPollData.state);
+                      setProgress(slowPollData.progress);
+                      setSyncStats(slowPollData.stats);
+                      
+                      // If it's complete now, show a toast
+                      if (slowPollData.state === 'complete') {
+                        toast({
+                          title: 'Sync Complete',
+                          description: `Successfully synced ${slowPollData.stats?.imported || 0} contacts to Kudosity`,
+                          variant: 'default',
+                        });
+                      }
+                    }
+                  }
+                } catch (slowPollError) {
+                  console.error('Error in slow polling:', slowPollError);
+                }
+              }, 10000); // Poll every 10 seconds during extended monitoring
+            }
+          }
+          // Handle error state
+          else if (state === 'error') {
             setError(progressData.error);
             setErrorDetails(progressData.errorDetails || { message: progressData.error });
             clearInterval(pollInterval);
@@ -1038,6 +1106,60 @@ export default function SyncForm({ initialError }: SyncFormProps) {
     return null;
   };
   
+  // Render sync progress if sync is in progress
+  const renderSyncProgress = () => {
+    if (syncState !== 'idle') {
+      return (
+        <SyncProgress
+          progress={{
+            state: syncState,
+            progress,
+            currentPage,
+            totalPages,
+            profilesRetrieved,
+            totalProfiles,
+            stats: syncStats,
+            error: error || undefined,
+            errorDetails
+          }}
+          onReset={handleReset}
+        />
+      );
+    }
+    return null;
+  };
+  
+  // Add handlers for large list sync completion
+  const handleLargeListSyncComplete = () => {
+    // Reset large list sync view
+    setShowLargeListSync(false);
+    
+    // Reset form
+    handleReset();
+  };
+  
+  const handleLargeListSyncCancel = () => {
+    // Just hide the large list sync view
+    setShowLargeListSync(false);
+  };
+  
+  // Update the render to show LargeListSync when needed
+  if (showLargeListSync) {
+    return (
+      <LargeListSync
+        sourceType={selectedType}
+        sourceId={selectedKlaviyoId}
+        sourceName={getSelectedKlaviyoName()}
+        destinationId={selectedKudosityId}
+        destinationName={getSelectedKudosityName()}
+        fieldMappings={fieldMappings}
+        onComplete={handleLargeListSyncComplete}
+        onCancel={handleLargeListSyncCancel}
+      />
+    );
+  }
+  
+  // Original render content for the form
   return (
     <div className="space-y-6">
       {error && (
@@ -1432,18 +1554,7 @@ export default function SyncForm({ initialError }: SyncFormProps) {
           </CardContent>
         </Card>
       ) : (
-        <SyncProgress
-          state={syncState}
-          progress={progress}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          profilesRetrieved={profilesRetrieved}
-          totalProfiles={totalProfiles}
-          stats={syncStats}
-          error={error}
-          errorDetails={errorDetails}
-          onReset={handleReset}
-        />
+        renderSyncProgress()
       )}
     </div>
   );

@@ -15,6 +15,9 @@ export interface AuthResponse {
 let supabaseInstance: SupabaseClient | null = null;
 let supabaseAdminInstance: SupabaseClient | null = null;
 
+// For handling storage
+const DEFAULT_STORAGE_BUCKET = 'temp-csv-storage';
+
 export function getSupabaseClient(): SupabaseClient {
   if (supabaseInstance) {
     return supabaseInstance;
@@ -24,6 +27,7 @@ export function getSupabaseClient(): SupabaseClient {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Missing Supabase environment variables');
     throw new Error('Missing Supabase environment variables');
   }
 
@@ -46,12 +50,80 @@ export function getSupabaseAdminClient(): SupabaseClient {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
   if (!supabaseUrl || !serviceRoleKey) {
-    console.warn('Missing Supabase service role key, falling back to anon key');
-    return getSupabaseClient();
+    console.error('Missing Supabase admin credentials', {
+      url: Boolean(supabaseUrl),
+      serviceRole: Boolean(serviceRoleKey),
+    });
+    
+    // If in development mode, we might use mock or local storage, so just warn
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+      console.warn('Using development mode without admin credentials, some features will be limited');
+      return null as unknown as SupabaseClient; // Allow callers to handle this case
+    }
+    
+    throw new Error('Missing required Supabase service role key for admin operations');
   }
 
   supabaseAdminInstance = createClient(supabaseUrl, serviceRoleKey);
   return supabaseAdminInstance;
+}
+
+// Helper function to ensure a storage bucket exists
+export async function ensureStorageBucket(bucketName: string = DEFAULT_STORAGE_BUCKET): Promise<boolean> {
+  try {
+    const supabase = getSupabaseAdminClient();
+    
+    if (!supabase) {
+      console.error('Failed to get admin client for bucket creation');
+      return false;
+    }
+    
+    // Check if bucket exists
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error('Error listing buckets:', listError);
+      return false;
+    }
+    
+    // See if our bucket exists
+    const bucketExists = buckets.some(b => b.name === bucketName);
+    
+    if (bucketExists) {
+      console.log(`Bucket '${bucketName}' already exists`);
+      
+      // Check if the bucket is public
+      // If needed, update bucket to be public
+      try {
+        await supabase.storage.updateBucket(bucketName, {
+          public: true
+        });
+        console.log(`Updated bucket '${bucketName}' to be public`);
+      } catch (updateError) {
+        console.warn(`Failed to update bucket '${bucketName}' public setting:`, updateError);
+        // Continue anyway, might still work
+      }
+      
+      return true;
+    }
+    
+    // Bucket doesn't exist, create it
+    console.log(`Creating bucket '${bucketName}'...`);
+    const { error: createError } = await supabase.storage.createBucket(bucketName, {
+      public: true,
+    });
+    
+    if (createError) {
+      console.error(`Error creating bucket '${bucketName}':`, createError);
+      return false;
+    }
+    
+    console.log(`Successfully created bucket '${bucketName}'`);
+    return true;
+  } catch (error) {
+    console.error('Unexpected error ensuring storage bucket:', error);
+    return false;
+  }
 }
 
 // Authentication helpers

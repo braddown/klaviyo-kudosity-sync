@@ -418,4 +418,177 @@ export async function testKlaviyoConnection(
       }
     };
   }
+}
+
+/**
+ * Fetch profiles from a Klaviyo list with pagination/chunking
+ */
+export async function fetchKlaviyoProfilesFromList(
+  apiKey: string,
+  listId: string,
+  offset: number = 0,
+  limit: number = 5000
+): Promise<any[]> {
+  try {
+    // Klaviyo API uses a different way of pagination with page[size] and cursor
+    // We'll need to implement a conversion from offset/limit to Klaviyo's approach
+    const pageSize = Math.min(limit, 100); // Klaviyo max page size is 100
+    const profiles: any[] = [];
+    let cursor = null;
+    let currentOffset = 0;
+    
+    // Keep fetching pages until we reach the desired offset + limit
+    while (currentOffset < offset + limit) {
+      const url = new URL('https://a.klaviyo.com/api/profiles/');
+      
+      const params = new URLSearchParams({
+        'filter': `equals(list_ids,["${listId}"])`,
+        'page[size]': pageSize.toString(),
+      });
+      
+      if (cursor) {
+        params.append('page[cursor]', cursor);
+      }
+      
+      url.search = params.toString();
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Klaviyo-API-Key ${apiKey}`,
+          'revision': '2023-07-15',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profiles: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // If we've reached the offset, start collecting profiles
+      if (currentOffset + data.data.length > offset) {
+        // Calculate how many profiles to skip at the start of this page
+        const skipCount = Math.max(0, offset - currentOffset);
+        
+        // Calculate how many profiles to take from this page
+        const takeCount = Math.min(
+          data.data.length - skipCount,
+          limit - profiles.length
+        );
+        
+        // Add the profiles to our collection
+        profiles.push(...data.data.slice(skipCount, skipCount + takeCount));
+        
+        // If we've collected enough profiles, we're done
+        if (profiles.length >= limit) {
+          break;
+        }
+      }
+      
+      // Update the offset counter
+      currentOffset += data.data.length;
+      
+      // If there's no next cursor, we've reached the end
+      if (!data.links?.next) {
+        break;
+      }
+      
+      // Extract the cursor from the next link
+      const nextUrl = new URL(data.links.next);
+      cursor = nextUrl.searchParams.get('page[cursor]');
+    }
+    
+    return profiles;
+  } catch (error: any) {
+    console.error('Error fetching Klaviyo profiles from list:', error);
+    throw new Error(`Failed to fetch Klaviyo profiles: ${error.message}`);
+  }
+}
+
+/**
+ * Fetch profiles from a Klaviyo segment with pagination/chunking
+ */
+export async function fetchKlaviyoProfilesFromSegment(
+  apiKey: string,
+  segmentId: string,
+  offset: number = 0,
+  limit: number = 5000
+): Promise<any[]> {
+  try {
+    // Similar to list profiles, but using segment filtering
+    const pageSize = Math.min(limit, 100); // Klaviyo max page size is 100
+    const profiles: any[] = [];
+    let cursor = null;
+    let currentOffset = 0;
+    
+    // Keep fetching pages until we reach the desired offset + limit
+    while (currentOffset < offset + limit) {
+      const url = new URL('https://a.klaviyo.com/api/profiles/');
+      
+      const params = new URLSearchParams({
+        'filter': `equals(segment_ids,["${segmentId}"])`,
+        'page[size]': pageSize.toString(),
+      });
+      
+      if (cursor) {
+        params.append('page[cursor]', cursor);
+      }
+      
+      url.search = params.toString();
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Klaviyo-API-Key ${apiKey}`,
+          'revision': '2023-07-15',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profiles: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // If we've reached the offset, start collecting profiles
+      if (currentOffset + data.data.length > offset) {
+        // Calculate how many profiles to skip at the start of this page
+        const skipCount = Math.max(0, offset - currentOffset);
+        
+        // Calculate how many profiles to take from this page
+        const takeCount = Math.min(
+          data.data.length - skipCount,
+          limit - profiles.length
+        );
+        
+        // Add the profiles to our collection
+        profiles.push(...data.data.slice(skipCount, skipCount + takeCount));
+        
+        // If we've collected enough profiles, we're done
+        if (profiles.length >= limit) {
+          break;
+        }
+      }
+      
+      // Update the offset counter
+      currentOffset += data.data.length;
+      
+      // If there's no next cursor, we've reached the end
+      if (!data.links?.next) {
+        break;
+      }
+      
+      // Extract the cursor from the next link
+      const nextUrl = new URL(data.links.next);
+      cursor = nextUrl.searchParams.get('page[cursor]');
+    }
+    
+    return profiles;
+  } catch (error: any) {
+    console.error('Error fetching Klaviyo profiles from segment:', error);
+    throw new Error(`Failed to fetch Klaviyo profiles: ${error.message}`);
+  }
 } 
