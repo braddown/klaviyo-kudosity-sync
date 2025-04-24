@@ -15,6 +15,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, PlusCircle, CheckIcon, ChevronDown, Search, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface SyncFormProps {
   initialError?: string;
@@ -82,6 +84,9 @@ export default function SyncForm({ initialError }: SyncFormProps) {
   
   // New expanded state for field mapping after auto-mapping
   const [showFieldMapping, setShowFieldMapping] = useState(false);
+  
+  // Add this state for chunking option
+  const [enableChunking, setEnableChunking] = useState<boolean>(true);
   
   const { toast } = useToast();
   
@@ -687,20 +692,22 @@ export default function SyncForm({ initialError }: SyncFormProps) {
         }
       }
       
-      // Start the sync process
+      // Make the API request with all the necessary parameters
       const response = await fetch('/api/sync-to-kudosity', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           sourceType: selectedType,
           sourceId: selectedKlaviyoId,
-          destinationId: kudosityListId,
+          destinationId: selectedKudosityId || null,
           fieldMappings,
+          enableChunking,
           kudosity_username: settings.kudosity_username,
           kudosity_password: settings.kudosity_password,
           klaviyo_api_key: settings.klaviyo_api_key
-        }),
+        })
       });
       
       // Check for non-OK response
@@ -1000,6 +1007,36 @@ export default function SyncForm({ initialError }: SyncFormProps) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+  
+  // Add this component for the chunking option
+  const renderChunkingOption = () => {
+    // Only show chunking option if we have a large number of profiles to sync
+    if (selectedSegmentProfileCount && selectedSegmentProfileCount > 5000) {
+      return (
+        <div className="flex items-center space-x-2 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <div className="flex items-start space-x-2">
+            <Checkbox 
+              id="enable-chunking" 
+              checked={enableChunking} 
+              onCheckedChange={(checked) => setEnableChunking(checked as boolean)} 
+            />
+            <div className="grid gap-1.5 leading-none">
+              <Label 
+                htmlFor="enable-chunking" 
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Enable chunking for large list ({selectedSegmentProfileCount.toLocaleString()} profiles)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Process this large list in smaller batches to prevent timeouts. Recommended for lists over 5,000 profiles.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
   
   return (
     <div className="space-y-6">
@@ -1377,11 +1414,13 @@ export default function SyncForm({ initialError }: SyncFormProps) {
                   )}
                   
                   <div className="mt-6">
+                    {renderChunkingOption()}
                     <Button 
+                      className="w-full"
                       onClick={handleSync}
                       disabled={isLoading || !selectedKlaviyoId || isLoadingFields}
                     >
-                      {isLoading || isLoadingFields ? 'Loading...' : 'Create List and Start Sync'}
+                      {syncState === 'idle' ? 'Start Sync' : 'Syncing...'}
                     </Button>
                     <p className="mt-2 text-xs text-muted-foreground">
                       This will automatically create a new Kudosity list based on the selected Klaviyo source.

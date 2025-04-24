@@ -11,14 +11,30 @@ import {
 } from '@/lib/api/kudosity';
 import { getSupabaseAdminClient } from '@/lib/supabase';
 
+// Constants for chunked processing
+const CHUNK_SIZE = 5000;  // Optimal size for each chunk
+const MAX_CONCURRENT_CHUNKS = 1;  // Process one chunk at a time to avoid overwhelming the API
+
 // In-memory storage for job progress (would be replaced with a proper DB solution in production)
 const jobProgress: Record<string, any> = {};
+
+// In-memory storage for tracking individual chunk imports
+const chunkImports: Record<string, any[]> = {};
 
 export async function POST(request: NextRequest) {
   try {
     // Parse request body first to check for direct credentials
     const body = await request.json();
-    const { sourceType, sourceId, destinationId, fieldMappings, kudosity_username, kudosity_password, klaviyo_api_key } = body;
+    const { 
+      sourceType, 
+      sourceId, 
+      destinationId, 
+      fieldMappings, 
+      kudosity_username, 
+      kudosity_password, 
+      klaviyo_api_key,
+      enableChunking = true  // Default to true for chunking
+    } = body;
     
     if (!sourceType || !sourceId || !fieldMappings) {
       return NextResponse.json(
@@ -93,9 +109,20 @@ export async function POST(request: NextRequest) {
       totalPages: 0,
       profilesRetrieved: 0,
       totalProfiles: 0,
+      enableChunking,
       error: null,
       stats: null,
+      chunks: {
+        total: 0,
+        processed: 0,
+        failed: 0,
+        inProgress: 0,
+        details: []
+      }
     };
+    
+    // Initialize chunk tracking for this job
+    chunkImports[jobId] = [];
     
     // Start the sync process asynchronously
     startSyncProcess(
@@ -107,7 +134,8 @@ export async function POST(request: NextRequest) {
       userId, 
       userKlaviyoApiKey, 
       userKudosityUsername, 
-      userKudosityPassword
+      userKudosityPassword,
+      enableChunking
     );
     
     // Return the job ID immediately
@@ -131,7 +159,8 @@ async function startSyncProcess(
   userId: string,
   klaviyoApiKey: string,
   kudosityUsername: string,
-  kudosityPassword: string
+  kudosityPassword: string,
+  enableChunking: boolean = true
 ) {
   try {
     // We already have the credentials passed in, no need to fetch from database
@@ -163,7 +192,7 @@ async function startSyncProcess(
         
         // TODO: Implement actual profile fetching from Klaviyo segment
         // For now, we'll simulate it with dummy data
-        profiles = generateDummyProfiles(500);
+        profiles = generateDummyProfiles(26000); // Simulating a large list
       } else {
         // Validate that the list exists
         const lists = await fetchKlaviyoLists(klaviyoApiKey);
@@ -180,9 +209,10 @@ async function startSyncProcess(
         
         // TODO: Implement actual profile fetching from Klaviyo list
         // For now, we'll simulate it with dummy data
-        profiles = generateDummyProfiles(500);
+        profiles = generateDummyProfiles(26000); // Simulating a large list
       }
       
+      // Update progress with total profile count
       updateJobProgress(jobId, {
         profilesRetrieved: profiles.length,
         totalProfiles: profiles.length,
@@ -268,106 +298,349 @@ async function startSyncProcess(
         throw new Error('No valid contacts with mobile numbers found for import');
       }
       
-      // Step 4: Create CSV and upload to Kudosity using bulk API
-      updateJobProgress(jobId, {
-        state: 'importing',
-        progress: 70,
-        message: 'Creating CSV file for bulk import...',
-      });
+      // Step 4: Decide if we need to use chunking
+      const shouldUseChunking = enableChunking && validContacts.length > CHUNK_SIZE;
       
-      // Create a CSV file and upload to Supabase storage
-      const filename = `sync-${sourceType}-${sourceName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now()}`;
-      const csvUrl = await createAndUploadContactsCSV(
-        validContacts as Array<{mobile: string, [key: string]: any}>,
-        filename
-      );
-      
-      updateJobProgress(jobId, {
-        progress: 80,
-        message: 'Uploading contacts to Kudosity...',
-        csvUrl
-      });
-      
-      // Start the bulk import process
-      const importId = await uploadContactsToKudosity(
-        kudosityUsername,
-        kudosityPassword,
-        csvUrl,
-        kudosityListId,
-        kudosityListName
-      );
-      
-      updateJobProgress(jobId, {
-        importId,
-        message: `Import started with ID: ${importId}. Monitoring progress...`,
-      });
-      
-      // Monitor import progress
-      let importComplete = false;
-      let attempts = 0;
-      let finalProgress = null;
-      
-      while (!importComplete && attempts < 20) { // Limit to 20 attempts with delay
-        attempts++;
+      if (shouldUseChunking) {
+        // Split contacts into chunks
+        const chunks = chunkArray(validContacts, CHUNK_SIZE);
         
-        try {
-          const progress = await checkBulkImportProgress(
-            kudosityUsername,
-            kudosityPassword,
-            importId
-          );
+        updateJobProgress(jobId, {
+          state: 'importing',
+          progress: 60,
+          message: `Large list detected (${validContacts.length} contacts). Processing in ${chunks.length} chunks of ${CHUNK_SIZE} contacts each...`,
+          chunks: {
+            total: chunks.length,
+            processed: 0,
+            failed: 0,
+            inProgress: 0,
+            details: chunks.map((_, index) => ({
+              chunkId: index + 1,
+              status: 'pending',
+              size: index < chunks.length - 1 ? CHUNK_SIZE : validContacts.length % CHUNK_SIZE || CHUNK_SIZE,
+              progress: 0,
+              importId: null,
+              error: null
+            }))
+          }
+        });
+        
+        // Process chunks sequentially to avoid overwhelming APIs
+        let successfulImports = 0;
+        let failedImports = 0;
+        let totalImported = 0;
+        let totalErrors = 0;
+        
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          const chunkNumber = i + 1;
           
           updateJobProgress(jobId, {
-            importProgress: progress,
-            message: `Import progress: ${progress.processed}/${progress.total} contacts processed. Status: ${progress.status}`,
-            progress: 80 + Math.min(19, Math.floor((progress.processed / Math.max(1, progress.total)) * 19))
+            message: `Processing chunk ${chunkNumber}/${chunks.length} (${chunk.length} contacts)...`,
+            chunks: {
+              details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                idx === i 
+                  ? { ...detail, status: 'processing', progress: 0 } 
+                  : detail
+              ),
+              inProgress: jobProgress[jobId].chunks.inProgress + 1
+            },
+            progress: 60 + Math.floor((i / chunks.length) * 30)
           });
           
-          if (progress.complete) {
-            importComplete = true;
-            finalProgress = progress;
-          } else {
-            // Wait a bit before checking again
-            await new Promise(resolve => setTimeout(resolve, 2000));
+          try {
+            // Create CSV for this chunk
+            const chunkFilename = `sync-${sourceType}-${sourceName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-chunk${chunkNumber}-${Date.now()}`;
+            
+            // Upload the chunk CSV
+            const csvUrl = await createAndUploadContactsCSV(
+              chunk as Array<{mobile: string, [key: string]: any}>,
+              chunkFilename
+            );
+            
+            // Update chunk status
+            updateJobProgress(jobId, {
+              chunks: {
+                details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                  idx === i 
+                    ? { ...detail, status: 'uploading', progress: 40, csvUrl } 
+                    : detail
+                )
+              }
+            });
+            
+            // Use the original list ID for the first chunk, but null for subsequent chunks
+            // This will create a new list for the first chunk if needed, and use that list for subsequent chunks
+            const targetListId = i === 0 ? kudosityListId : chunkImports[jobId][0].listId || null;
+            const targetListName = i === 0 ? kudosityListName : null; // Only use name for first chunk
+            
+            // Start import for this chunk
+            const importId = await uploadContactsToKudosity(
+              kudosityUsername,
+              kudosityPassword,
+              csvUrl,
+              targetListId,
+              targetListName || undefined
+            );
+            
+            // Track this chunk's import ID
+            chunkImports[jobId].push({
+              chunkId: chunkNumber,
+              importId,
+              listId: targetListId,
+              status: 'importing',
+              size: chunk.length
+            });
+            
+            // Update chunk status
+            updateJobProgress(jobId, {
+              chunks: {
+                details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                  idx === i 
+                    ? { ...detail, status: 'importing', progress: 70, importId } 
+                    : detail
+                )
+              }
+            });
+            
+            // Monitor import progress for this chunk
+            let importComplete = false;
+            let attempts = 0;
+            let finalProgress = null;
+            
+            while (!importComplete && attempts < 20) {
+              attempts++;
+              
+              try {
+                const progress = await checkBulkImportProgress(
+                  kudosityUsername,
+                  kudosityPassword,
+                  importId
+                );
+                
+                // Update chunk status
+                updateJobProgress(jobId, {
+                  chunks: {
+                    details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                      idx === i 
+                        ? { 
+                            ...detail, 
+                            status: progress.complete ? 'completed' : 'importing', 
+                            progress: 70 + Math.floor((progress.processed / Math.max(1, progress.total)) * 30),
+                            importProgress: progress
+                          } 
+                        : detail
+                    )
+                  }
+                });
+                
+                if (progress.complete) {
+                  importComplete = true;
+                  finalProgress = progress;
+                  
+                  // Update chunk status as complete
+                  updateJobProgress(jobId, {
+                    chunks: {
+                      details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                        idx === i 
+                          ? { ...detail, status: 'completed', progress: 100, importProgress: progress } 
+                          : detail
+                      ),
+                      processed: jobProgress[jobId].chunks.processed + 1,
+                      inProgress: jobProgress[jobId].chunks.inProgress - 1
+                    }
+                  });
+                  
+                  // Update overall stats
+                  successfulImports++;
+                  totalImported += (progress.processed - progress.errors);
+                  totalErrors += progress.errors;
+                  
+                  // Save actual list ID from first chunk to use for subsequent chunks
+                  if (i === 0 && !kudosityListId) {
+                    const listId = await getListIdFromImport(kudosityUsername, kudosityPassword, importId);
+                    if (listId) {
+                      chunkImports[jobId][0].listId = listId;
+                    }
+                  }
+                } else {
+                  // Wait before checking again
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+              } catch (error: any) {
+                console.error(`Error checking progress for chunk ${chunkNumber}:`, error);
+                // If checking progress fails, try again after a delay
+                await new Promise(resolve => setTimeout(resolve, 3000));
+              }
+            }
+            
+            if (!importComplete) {
+              // Chunk import didn't complete in the allowed time frame
+              failedImports++;
+              
+              // Update chunk status as failed
+              updateJobProgress(jobId, {
+                chunks: {
+                  details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                    idx === i 
+                      ? { 
+                          ...detail, 
+                          status: 'failed', 
+                          error: 'Import timed out' 
+                        } 
+                      : detail
+                  ),
+                  failed: jobProgress[jobId].chunks.failed + 1,
+                  inProgress: jobProgress[jobId].chunks.inProgress - 1
+                }
+              });
+            }
+            
+          } catch (chunkError: any) {
+            console.error(`Error processing chunk ${chunkNumber}:`, chunkError);
+            
+            // Update chunk status as failed
+            updateJobProgress(jobId, {
+              chunks: {
+                details: jobProgress[jobId].chunks.details.map((detail: any, idx: number) => 
+                  idx === i 
+                    ? { 
+                        ...detail, 
+                        status: 'failed', 
+                        error: chunkError.message 
+                      } 
+                    : detail
+                ),
+                failed: jobProgress[jobId].chunks.failed + 1,
+                inProgress: jobProgress[jobId].chunks.inProgress - 1
+              }
+            });
+            
+            failedImports++;
           }
-        } catch (error: any) {
-          console.error('Error checking import progress:', error);
-          // If checking progress fails, we'll try again after a delay
-          await new Promise(resolve => setTimeout(resolve, 3000));
         }
-      }
-      
-      // Step 5: Complete the process
-      if (importComplete && finalProgress) {
+        
+        // All chunks processed - update final status
         updateJobProgress(jobId, {
           state: 'complete',
           progress: 100,
-          message: 'Sync completed successfully',
+          message: `Chunked import completed. Successfully imported ${totalImported} contacts across ${successfulImports} chunks. ${failedImports} chunks failed.`,
           stats: {
-            imported: finalProgress.processed - finalProgress.errors,
+            imported: totalImported,
             skipped: invalidCount,
-            errors: finalProgress.errors,
+            errors: totalErrors,
             total: kudosityContacts.length,
-            listId: kudosityListId || 'new_list', // We won't know the new list ID immediately
-            csvUrl,
-            importId
+            listId: chunkImports[jobId][0]?.listId || 'new_list',
+            chunks: {
+              total: chunks.length,
+              successful: successfulImports,
+              failed: failedImports
+            }
           },
         });
+        
       } else {
-        // If we timed out waiting for import to complete, it may still be processing
+        // Process without chunking (original logic for smaller lists)
         updateJobProgress(jobId, {
-          state: 'complete',
-          progress: 100,
-          message: 'Sync initiated, but import is still processing',
-          stats: {
-            imported: 'processing',
-            skipped: invalidCount,
-            total: kudosityContacts.length,
-            listId: kudosityListId || 'new_list',
-            csvUrl,
-            importId
-          },
+          state: 'importing',
+          progress: 70,
+          message: 'Creating CSV file for bulk import...',
         });
+        
+        // Create a CSV file and upload to Supabase storage
+        const filename = `sync-${sourceType}-${sourceName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now()}`;
+        const csvUrl = await createAndUploadContactsCSV(
+          validContacts as Array<{mobile: string, [key: string]: any}>,
+          filename
+        );
+        
+        updateJobProgress(jobId, {
+          progress: 80,
+          message: 'Uploading contacts to Kudosity...',
+          csvUrl
+        });
+        
+        // Start the bulk import process
+        const importId = await uploadContactsToKudosity(
+          kudosityUsername,
+          kudosityPassword,
+          csvUrl,
+          kudosityListId,
+          kudosityListName
+        );
+        
+        updateJobProgress(jobId, {
+          importId,
+          message: `Import started with ID: ${importId}. Monitoring progress...`,
+        });
+        
+        // Monitor import progress
+        let importComplete = false;
+        let attempts = 0;
+        let finalProgress = null;
+        
+        while (!importComplete && attempts < 20) { // Limit to 20 attempts with delay
+          attempts++;
+          
+          try {
+            const progress = await checkBulkImportProgress(
+              kudosityUsername,
+              kudosityPassword,
+              importId
+            );
+            
+            updateJobProgress(jobId, {
+              importProgress: progress,
+              message: `Import progress: ${progress.processed}/${progress.total} contacts processed. Status: ${progress.status}`,
+              progress: 80 + Math.min(19, Math.floor((progress.processed / Math.max(1, progress.total)) * 19))
+            });
+            
+            if (progress.complete) {
+              importComplete = true;
+              finalProgress = progress;
+            } else {
+              // Wait a bit before checking again
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } catch (error: any) {
+            console.error('Error checking import progress:', error);
+            // If checking progress fails, we'll try again after a delay
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+        
+        // Step 5: Complete the process
+        if (importComplete && finalProgress) {
+          updateJobProgress(jobId, {
+            state: 'complete',
+            progress: 100,
+            message: 'Sync completed successfully',
+            stats: {
+              imported: finalProgress.processed - finalProgress.errors,
+              skipped: invalidCount,
+              errors: finalProgress.errors,
+              total: kudosityContacts.length,
+              listId: kudosityListId || 'new_list', // We won't know the new list ID immediately
+              csvUrl,
+              importId
+            },
+          });
+        } else {
+          // If we timed out waiting for import to complete, it may still be processing
+          updateJobProgress(jobId, {
+            state: 'complete',
+            progress: 100,
+            message: 'Sync initiated, but import is still processing',
+            stats: {
+              imported: 'processing',
+              skipped: invalidCount,
+              total: kudosityContacts.length,
+              listId: kudosityListId || 'new_list',
+              csvUrl,
+              importId
+            },
+          });
+        }
       }
       
       // Save sync history to database if we have a real user ID
@@ -379,13 +652,21 @@ async function startSyncProcess(
             user_id: userId,
             source_type: sourceType,
             source_id: sourceId,
-            destination_id: kudosityListId || 'new_list',
+            destination_id: shouldUseChunking 
+              ? chunkImports[jobId][0]?.listId || 'new_list' 
+              : kudosityListId || 'new_list',
             profiles_count: profiles.length,
             imported_count: validContacts.length,
             skipped_count: invalidCount,
             completed_at: new Date().toISOString(),
-            import_id: importId,
-            csv_url: csvUrl
+            import_id: shouldUseChunking 
+              ? JSON.stringify(chunkImports[jobId].map(c => c.importId)) 
+              : jobProgress[jobId].importId,
+            csv_url: shouldUseChunking 
+              ? JSON.stringify(jobProgress[jobId].chunks.details.map((d: any) => d.csvUrl).filter(Boolean)) 
+              : jobProgress[jobId].csvUrl,
+            chunked: shouldUseChunking,
+            chunks_count: shouldUseChunking ? chunkImports[jobId].length : 0
           });
           
           if (error) {
@@ -427,6 +708,28 @@ async function startSyncProcess(
   }
 }
 
+// Split array into chunks of the specified size
+function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+// Helper function to get list ID from an import (implementation depends on Kudosity API)
+async function getListIdFromImport(username: string, password: string, importId: string): Promise<string | null> {
+  try {
+    // This is a placeholder - in a real implementation, you would need to
+    // fetch the list ID from Kudosity based on the import ID, if their API supports this
+    // For now, we'll return null
+    return null;
+  } catch (error) {
+    console.error('Error getting list ID from import:', error);
+    return null;
+  }
+}
+
 // Helper function to generate dummy profiles for testing
 function generateDummyProfiles(count: number) {
   const profiles = [];
@@ -449,6 +752,14 @@ function generateDummyProfiles(count: number) {
 
 function updateJobProgress(jobId: string, updates: Record<string, any>) {
   if (jobProgress[jobId]) {
+    // Deep merge of chunks object
+    if (updates.chunks && jobProgress[jobId].chunks) {
+      updates.chunks = {
+        ...jobProgress[jobId].chunks,
+        ...updates.chunks,
+      };
+    }
+    
     jobProgress[jobId] = {
       ...jobProgress[jobId],
       ...updates,
