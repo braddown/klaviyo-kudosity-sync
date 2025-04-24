@@ -33,11 +33,20 @@ function getSupabaseStorageClient() {
   }
 }
 
+// Add this function to create a data URL from a string
+function createDataUrl(content: string, mimeType = 'text/csv') {
+  // Only works in browser environment
+  if (typeof window !== 'undefined') {
+    const blob = new Blob([content], { type: mimeType });
+    return URL.createObjectURL(blob);
+  }
+  // For server environment, use base64 encoding
+  return `data:${mimeType};base64,${Buffer.from(content).toString('base64')}`;
+}
+
 /**
- * Creates and uploads a CSV file of contacts to Supabase Storage - Legacy wrapper for backward compatibility
- * @param contacts Array of contact objects with mobile numbers
- * @param filenameOrClient Either a filename string or Supabase client instance
- * @returns Public URL of the uploaded CSV file or file:// URL for local fallback
+ * Creates and uploads a CSV file of contacts to Supabase Storage
+ * If storage access fails, falls back to data URL
  */
 export async function createAndUploadContactsCSV(
   contacts: Array<Record<string, any>>,
@@ -120,10 +129,8 @@ export async function createAndUploadContactsCSV(
       const bucketName = 'temp-csv-storage';
       
       console.log(`Uploading CSV to Supabase bucket: ${bucketName}`);
-      console.log(`Bucket name length: ${bucketName.length}, bucket ID: ${encodeURIComponent(bucketName)}`);
       
-      // Skip bucket existence check and creation - assume bucket exists
-      // Upload the file directly
+      // Try to upload to Supabase
       const { data, error } = await supabase.storage
         .from(bucketName)
         .upload(fullFilename, new Blob([csvContent], { type: 'text/csv' }), {
@@ -134,6 +141,14 @@ export async function createAndUploadContactsCSV(
       
       if (error) {
         console.error('Error uploading CSV to storage:', error);
+        
+        // FALLBACK: If storage upload fails and we're in a development environment,
+        // create a data URL instead
+        if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+          console.log('Falling back to data URL for development');
+          return createDataUrl(csvContent);
+        }
+        
         throw error;
       }
       
@@ -182,12 +197,23 @@ export async function createAndUploadContactsCSV(
       return publicUrl;
     } catch (storageError: any) {
       console.error('Storage upload failed:', storageError);
+      
+      // FALLBACK: If in development, use a data URL
+      if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+        console.log('Using data URL fallback for CSV in development environment');
+        return createDataUrl(csvContent);
+      }
+      
       throw new Error(`Failed to upload CSV to Supabase storage: ${storageError.message || 'Unknown error'}. Please check your Supabase storage configuration and permissions.`);
     }
   }
   
   // If no Supabase client is available
   if (!supabase) {
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+      console.log('No Supabase client available, using data URL fallback');
+      return createDataUrl(csvContent);
+    }
     throw new Error('Supabase client is required for CSV file uploads. Kudosity API requires publicly accessible URLs for CSV files.');
   }
   
